@@ -6,7 +6,7 @@ import flask
 from retry import retry
 import shutil
 
-from flask import g
+from flask import g, request
 
 from playwright.sync_api import sync_playwright
 
@@ -20,7 +20,7 @@ PLAY = sync_playwright().start()
 BROWSER = PLAY.chromium.launch_persistent_context(
     user_data_dir=os.path.join(workdir, "browser_files"),
     headless=False,
-    # proxy={"server": "http://127.0.0.1:7890"},
+    proxy={"server": "http://localhost:7890"},
 )
 
 
@@ -32,27 +32,39 @@ def screenshot(page, name):
         workdir, "screenshots", f"screenshot_{name}.png"))
 
 
+def savepage(page, name):
+    with open(os.path.join(workdir, "htmls", f"{name}.html"), "w") as f:
+        f.write(page.content())
+
+def record_page(page, name):
+    time.sleep(3)
+
+    savepage(page, name)
+    screenshot(page, name)
+
 @retry(tries=2, delay=3, max_delay=5)
 def login(PAGE):
     if os.path.exists(os.path.join(workdir, "screenshots")):
         shutil.rmtree(os.path.join(workdir, "screenshots"))
     os.mkdir(os.path.join(workdir, "screenshots"))
 
+    if os.path.exists(os.path.join(workdir, "htmls")):
+        shutil.rmtree(os.path.join(workdir, "htmls"))
+    os.mkdir(os.path.join(workdir, "htmls"))
+
     time.sleep(1)
 
     try:
         print("Logging in...")
         PAGE.goto("https://chat.openai.com/auth/login")
-        screenshot(PAGE, "1")
+        record_page(PAGE, "1")
         PAGE.get_by_role("button", name="Log in").click()
         time.sleep(1)
-        screenshot(PAGE, "2")
+        record_page(PAGE, "2")
         PAGE.get_by_label("Email address").click()
         PAGE.get_by_label("Email address").fill("kevinfinley@163.com")
         PAGE.locator("button[name=\"action\"]").click()
-        screenshot(PAGE, "2.5")
-        with open(os.path.join(workdir, "html.html"), "w") as f:
-            f.write(PAGE.content())
+        record_page(PAGE, "2.5")
         # try select img alt="captcha", if exist, then  store img to screenshot folder
         try:
             # captcha_img = PAGE.get_by_alt("captcha")
@@ -67,57 +79,44 @@ def login(PAGE):
             PAGE.get_by_label("Enter the code shown above").fill(captcha)
             PAGE.locator("button[name=\"action\"]").click()
 
-            screenshot(PAGE, "2.6")
+            record_page(PAGE, "2.6")
         except:
             pass
-        with open(os.path.join(workdir, "html2.html"), "w") as f:
-            f.write(PAGE.content())
-            
+        record_page(PAGE, "2.7")
+
         PAGE.get_by_label("Password").fill("Tvcq_5tM.tww49G")
         PAGE.get_by_role("button", name="Continue").click()
-        screenshot(PAGE, "3")
+        record_page(PAGE, "3")
     except Exception as e:
         # screenshot
-        screenshot(PAGE, "login_error")
-
-        # # save html
-        # with open(os.path.join(workdir, "html.html"), "w") as f:
-        #     f.write(PAGE.content())
+        record_page(PAGE, "login_error")
         raise e
 
     print("Logged in, waiting for 2FA...")
     try:
-        PAGE.wait_for_selector("button[name=\"Next\"]", timeout=3000)
+        # PAGE.wait_for_selector("button[name=\"Next\"]", timeout=5000)
         PAGE.get_by_role("button", name="Next").click()
-        screenshot(PAGE, "4")
+        record_page(PAGE, "4")
     except:
         pass
     try:
         # set timeout 5s
-        PAGE.wait_for_selector("button[name=\"Next\"]", timeout=3000)
+        # PAGE.wait_for_selector("button[name=\"Next\"]", timeout=5000)
         PAGE.get_by_role("button", name="Next").click()
-        screenshot(PAGE, "5")
+        record_page(PAGE, "4.1")
     except:
         pass
 
-    # screenshot
-    screenshot(PAGE, "6")
+    try:
+        PAGE.get_by_role("button", name="Done").click()
+        record_page(PAGE, "4.2")
+    except:
+        pass
 
-    # # save html
-    # with open(os.path.join(workdir, "html.html"), "w") as f:
-    #     f.write(PAGE.content())
+    record_page(PAGE, "5")
 
     print("All set!")
     return True
-
-
-# PAGE.get_by_role("textbox").click()
-# PAGE.get_by_role("textbox").fill("hi")
-# PAGE.get_by_role("textbox").press("Enter")
-# PAGE.get_by_text("Hello! How can I help you today? Is there something you need to know or would li").click()
-# PAGE.get_by_role("textbox").click()
-# PAGE.get_by_role("textbox").fill("how are you?")
-# PAGE.get_by_role("textbox").press("Enter")
 
 
 def get_input_box():
@@ -131,18 +130,21 @@ def is_logged_in():
 
 
 def send_message(message):
+    global PAGE
     # Send the message
+    # screenshot(PAGE, "send_msg")
+    # savepage(PAGE, "send_msg")
     box = get_input_box()
     box.click()
     box.fill(message)
     box.press("Enter")
+    screenshot(PAGE, "sent_msg")
+    savepage(PAGE, "sent_msg")
 
 
 def get_last_message():
     """Get the latest message"""
-    # capture a screen shot
-
-    # page_elements = PAGE.query_selector_all("div[class*='ConversationItem__Message']")
+    record_page(PAGE, "get_last_msg")
     page_elements = PAGE.query_selector_all(
         "div[class*='relative lg:w-[calc(100%-115px)] w-full flex flex-col']")
     last_element = page_elements[-1]
@@ -174,18 +176,24 @@ def chat():
     return response
 
 
-@retry(tries=2, delay=3)
+@retry(tries=3, delay=3)
 @APP.route("/chat", methods=["POST"])
 def chat_post():
+    timeout_interval = 30
+
+    print(f"Received POST request")
     # the request should be a json object with a key "message"
-    message = flask.request.json["message"]
+    incoming_request = request.form.to_dict()
+    print("Received request: ", incoming_request)
+    
+    message = incoming_request["message"]
     print("Sending message: ", message)
     send_message(message)
     # wait for the response
     wait_cnt = 0
     last_response = message
     response = message
-    for _ in range(10):
+    for _ in range(timeout_interval):
         response = get_last_message()
         if response != last_response:
             last_response = response
@@ -195,9 +203,25 @@ def chat_post():
             if wait_cnt >= 3:
                 break
         time.sleep(1)
+
+    # response = get_last_message()
+
+    # time.sleep(10)
+
     print("Response: ", response)
+    print(f"len of response: {len(response)}")
+    # print response in bytes
+    print("Response in bytes: ", response.encode("utf-8"))
     return response
 
+
+@APP.route("/refresh", methods=["GET"])
+def refresh():
+    PAGE.reload()
+    if login(PAGE):
+        return "OK"
+    else:
+        return "FAIL"
 
 @retry(tries=2, delay=5)
 def start_browser():
