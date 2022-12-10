@@ -4,6 +4,11 @@ __pycache__/
 *$py.class
 browser_files/
 
+htmls
+browser_files
+conversations
+screenshots
+
 .idea/
 
 # C extensions
