@@ -1,8 +1,20 @@
 # ChatGPT api
 
-* It uses playwright and chromium to open browser and parse html.
-* It is an unoffical api for development purpose only.
+This is based on original work of [chatgpt-api](https://github.com/taranjeet/chatgpt-api.git)
 
+# New Feature Added Besides the original work
+
+- [x] Screenshot(for status check)
+- [x] Html record(in case of error, easy to debug)
+- [x] run.sh for server without ui
+- [x] chat record(anonymous, for research purpose only)
+- [x] support for multiple pop-up windows
+- [x] support for resetting session and login(in case of error)
+
+# Original Feat
+
+* It uses playwright and chromium to open browser and parse html.(avoiding authentication problem)
+* It is an unoffical api for development purpose only.
 
 # How to install
 
@@ -12,10 +24,12 @@
 
 ```python
 # one time
-virtualenv -p $(which python3) pyenv
+virtualenv - p $(which python3)
+pyenv
 
 # everytime you want to run the server
-source pyenv/bin/activate
+source
+pyenv / bin / activate
 ```
 
 * Now install the requirements
@@ -38,7 +52,6 @@ python server.py
 
 * The server runs at port `5001`. If you want to change, you can change it in server.py
 
-
 # Api Documentation
 
 * There is a single end point only. It is available at `/chat`
@@ -49,4 +62,7 @@ curl -XGET http://localhost:5001/chat?q=Write%20a%20python%20program%20to%20reve
 
 # Credit
 
-* All the credit for this script goes to [Daniel Gross's whatsapp gpt](https://github.com/danielgross/whatsapp-gpt) package. I have just taken the script as an individual file and added documentation for how to install and run it.
+* All the credit for this script goes to [Daniel Gross's whatsapp gpt](https://github.com/danielgross/whatsapp-gpt)
+  package. I have just taken the script as an individual file and added documentation for how to install and run it.
+
+* Credits to OpenAI for the ChatGPT model and [taranjeet](https://github.com/taranjeet/chatgpt-api.git) for the original work.
