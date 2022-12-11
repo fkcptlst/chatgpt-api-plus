@@ -1,6 +1,7 @@
 # coding:utf-8
 
 import time
+import json
 import re
 import os
 import flask
@@ -34,6 +35,28 @@ BROWSER = PLAY.chromium.launch_persistent_context(
 chat_logger = ChatLogger(os.path.join(workdir, "conversations"), "chatgpt")
 
 PAGE = BROWSER.new_page()
+
+
+def dump_tokens():
+    global BROWSER
+    global PAGE
+    try:
+        # session_token is __Secure-next-auth.session-token from cookies
+        cookies = BROWSER.pages[-1].context.cookies()
+        for cookie_dict in cookies:
+            if cookie_dict["name"] == "__Secure-next-auth.session-token":
+                session_token = cookie_dict["value"]
+                break
+        try:
+            config = json.load(open(os.path.join(workdir, "config.json"), "r"))
+        except FileNotFoundError:
+            config = {}
+        config["session_token"] = session_token
+        with open(os.path.join(workdir, "config.json"), "w") as f:
+            json.dump(config, f)
+    except Exception as e:
+        print(f"Error dumping tokens: {e}")
+        pass
 
 
 def screenshot(page, name):
@@ -137,6 +160,7 @@ def login(PAGE):
     record_page(PAGE, "4")
 
     print("All set!")
+    dump_tokens()
     return True
 
 
@@ -174,6 +198,7 @@ def get_last_message():
     text = re.sub(r"Contents.*content policy", "", text)
     text = re.sub(r"This content .* content policy", "", text)
     text = re.sub(r"If you believe this to be in error.*our research in this area", "", text)
+    dump_tokens()
     return text
 
 
@@ -262,6 +287,47 @@ def refresh():
         return "FAIL"
 
 
+@APP.route("/retry", methods=["GET"])
+def try_again():
+    global PAGE
+    global chat_logger
+    timeout_interval = 30
+
+    PAGE.get_by_role("button", name="Try again").click()
+    # wait for the response
+    wait_cnt = 0
+    prev_max_len = 0
+    prev_max_len_response = ""
+    for _ in tqdm(range(timeout_interval), leave=True):
+        response = get_last_message()
+        if len(response) > prev_max_len:
+            prev_max_len = len(response)
+            prev_max_len_response = response
+            print(f"len of response: {len(response)}, len of prev_max_len_response: {prev_max_len}")
+            wait_cnt = 0
+        elif len(response) < prev_max_len - 10:  # content policy removed, 10 is arbitrary magic number
+            break
+        elif response == b'\xe2\x80\x8b' or len(response) <= 3:
+            wait_cnt = 0
+        else:
+            wait_cnt += 1
+            print(f"wait_cnt: {wait_cnt}")
+            if wait_cnt >= 4:
+                break
+        time.sleep(1)
+
+    # response = get_last_message()
+
+    # time.sleep(10)
+
+    print("Response: ", prev_max_len_response)
+    print(f"len of response: {len(prev_max_len_response)}")
+    # print response in bytes
+    print("Response in bytes: ", prev_max_len_response.encode("utf-8"))
+    chat_logger.record_conversation({"you": message, "ai": prev_max_len_response})
+    return prev_max_len_response
+
+
 @APP.route("/reset", methods=["GET"])
 def reset():
     global PAGE
@@ -269,6 +335,7 @@ def reset():
     PAGE.get_by_text("Reset Thread").click()
     if is_logged_in():
         chat_logger.start_new_conversation()
+        dump_tokens()
         return "OK"
     else:
         return "FAIL"
